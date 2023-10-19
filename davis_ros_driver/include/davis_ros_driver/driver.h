@@ -2,6 +2,8 @@
 
 #pragma once
 
+#define USE_EVENT_CAMERA_MSGS
+
 #include <ros/ros.h>
 #include <string>
 
@@ -29,6 +31,13 @@
 // camera info manager
 #include <sensor_msgs/CameraInfo.h>
 #include <camera_info_manager/camera_info_manager.h>
+
+#ifdef USE_EVENT_CAMERA_MSGS
+
+#include <event_camera_msgs/EventPacket.h>
+#include <event_camera_codecs/encoder.h>
+
+#endif
 
 namespace davis_ros_driver {
 
@@ -104,6 +113,11 @@ private:
 
   bool parameter_update_required_;
   bool parameter_bias_update_required_;
+
+#ifdef USE_EVENT_CAMERA_MSGS
+  using EventPacket = event_camera_msgs::EventPacket;
+  std::shared_ptr<event_camera_codecs::Encoder> encoder_;
+#endif
 
 };
 

@@ -4,6 +4,7 @@
 #include "davis_ros_driver/driver_utils.h"
 #include <std_msgs/Int32.h>
 
+
 //DAVIS Bias types
 #define CF_N_TYPE(COARSE, FINE) (struct caer_bias_coarsefine) \
 { .coarseValue = (uint8_t)(COARSE), .fineValue = (uint8_t)(FINE), \
@@ -51,7 +52,13 @@ DavisRosDriver::DavisRosDriver(ros::NodeHandle & nh, ros::NodeHandle nh_private)
   if (ns == "/")
     ns = "/dvs";
 
+#ifdef USE_EVENT_CAMERA_MSGS
+  encoder_ = event_camera_codecs::Encoder::newInstance("mono");
+  event_array_pub_ = nh_.advertise<EventPacket>(ns + "/events", 10);
+#else
   event_array_pub_ = nh_.advertise<dvs_msgs::EventArray>(ns + "/events", 10);
+#endif
+
   camera_info_pub_ = nh_.advertise<sensor_msgs::CameraInfo>(ns + "/camera_info", 1);
   imu_pub_ = nh_.advertise<sensor_msgs::Imu>(ns + "/imu", 10);
   image_pub_ = nh_.advertise<sensor_msgs::Image>(ns + "/image_raw", 1);
@@ -635,7 +642,11 @@ void DavisRosDriver::readout()
 
     boost::posix_time::ptime next_send_time = boost::posix_time::microsec_clock::local_time();
 
+#ifdef USE_EVENT_CAMERA_MSGS
+    EventPacket::Ptr event_array_msg;
+#else
     dvs_msgs::EventArrayPtr event_array_msg;
+#endif
 
     while (running_)
     {
@@ -664,7 +675,13 @@ void DavisRosDriver::readout()
                 {
                     if (!event_array_msg)
                     {
+#ifdef USE_EVENT_CAMERA_MSGS
+                        event_array_msg = boost::make_shared<EventPacket>();
+                        event_array_msg->encoding = "mono";
+                        encoder_->setBuffer(&event_array_msg->events);
+#else
                         event_array_msg = dvs_msgs::EventArrayPtr(new dvs_msgs::EventArray());
+#endif
                         event_array_msg->height = davis_info_.dvsSizeY;
                         event_array_msg->width = davis_info_.dvsSizeX;
                     }
@@ -672,11 +689,25 @@ void DavisRosDriver::readout()
                     caerPolarityEventPacket polarity = (caerPolarityEventPacket) packetHeader;
 
                     const int numEvents = caerEventPacketHeaderGetEventNumber(packetHeader);
+#ifdef USE_EVENT_CAMERA_MSGS
+                    event_array_msg->events.clear();
+                    uint64_t base_ts = 0;
+                    encoder_->setSensorTime(base_ts);
+#endif
                     for (int j = 0; j < numEvents; j++)
                     {
                         // Get full timestamp and addresses of first event.
                         caerPolarityEvent event = caerPolarityEventPacketGetEvent(polarity, j);
-
+#ifdef USE_EVENT_CAMERA_MSGS
+                        const uint64_t ts_nsec = caerPolarityEventGetTimestamp64(event, polarity) * 1000;
+                        if (j == 0) {
+                            event_array_msg->header.stamp = reset_time_ + ros::Duration().fromNSec(ts_nsec);
+                            base_ts = ts_nsec;
+                        }
+                        encoder_->encodeCD(ts_nsec - base_ts,
+                                           caerPolarityEventGetX(event), caerPolarityEventGetY(event),
+                                           caerPolarityEventGetPolarity(event));
+#else
                         dvs_msgs::Event e;
                         e.x = caerPolarityEventGetX(event);
                         e.y = caerPolarityEventGetY(event);
@@ -690,6 +721,7 @@ void DavisRosDriver::readout()
                         }
 
                         event_array_msg->events.push_back(e);
+#endif
                     }
 
                     // throttle event messages

@@ -11,6 +11,8 @@
 
   <depend>roscpp</depend>
   <depend>dvs_msgs</depend>
+  <depend>event_camera_msgs</depend>
+  <depend>event_camera_codecs</depend>
   <depend>std_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>dynamic_reconfigure</depend>
